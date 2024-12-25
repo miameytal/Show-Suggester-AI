@@ -11,10 +11,14 @@ import requests
 import webbrowser
 import time
 from usearch.index import Index
+from colorama import Fore, Style, init
+from PIL import Image
+from io import BytesIO
 
+# Initialize colorama
+init(autoreset=True)
 
 client = OpenAI()
-
 
 def generate_show_details(prompt_text):
     response = openai.chat.completions.create(
@@ -32,7 +36,6 @@ def generate_show_details(prompt_text):
         # In case it starts with "json", remove that label too.
         if (raw_content.startswith("json")):
             raw_content = raw_content[4:].strip()
-    print(f"Response content after cleaning:\n{raw_content}")  # Debugging line
     data = json.loads(raw_content)
     return data['name'], data['description']
 
@@ -78,33 +81,47 @@ def generate_ad(order_id, max_retries=10, delay_in_seconds=5):
     return None
 
 def retrieve_order_id_stub(prompt):
-    print(f"Stub: retrieve_order_id called with prompt: {prompt}")
+    print(f"{Fore.YELLOW}Stub used to retrieve order ID")
     return "mock_order_id"
 
 def generate_ad_stub(order_id, max_retries=10, delay_in_seconds=5):
-    print(f"Stub: generate_ad called with order_id: {order_id}")
+    print(f"{Fore.YELLOW}Stub used to generate ad")
     return "https://example.com/mock_ad_image.jpg"
+
+def download_image(url, filename):
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(filename, 'wb') as f:
+            f.write(response.content)
+        return filename
+    else:
+        print(f"{Fore.RED}Failed to download image from {url}")
+        return None
+
+def display_image(filename):
+    image = Image.open(filename)
+    image.show()
 
 def main():
     while True:
-        user_input = input("Which TV shows did you really like watching? Separate them by a comma. Make sure to enter more than 1 show:\n")
+        user_input = input(f"{Fore.CYAN}Which TV shows did you really like watching? Separate them by a comma. Make sure to enter more than 1 show:\n")
         user_shows = [show.strip() for show in user_input.split(",")]
 
         if len(user_shows) < 2:
-            print("Please enter more than one show.")
+            print(f"{Fore.RED}Please enter more than one show.")
             continue  # This will prompt the user again
 
         matched_shows = match_user_shows(user_shows)
 
-        confirm = input(f"Making sure, do you mean {', '.join(matched_shows)}? (y/n)\n")
+        confirm = input(f"{Fore.CYAN}Making sure, do you mean {', '.join(matched_shows)}? (y/n)\n")
         if confirm.lower() == "y":
             break
-        print("Sorry about that. Let's try again, please make sure to write the names of the TV shows correctly.")
+        print(f"{Fore.RED}Sorry about that. Let's try again, please make sure to write the names of the TV shows correctly.")
 
-    print("Great! Generating recommendations now...")
+    print(f"{Fore.CYAN}Great! Generating recommendations now...\n")
     recommendations = get_recommendations(matched_shows)
 
-    print("Here are the TV shows that I think you would love:")
+    print(f"{Fore.CYAN}Here are the TV shows that I think you would love:")
     for title, score in recommendations:
         print(f"{title} ({int(score * 100)}%)")
 
@@ -124,15 +141,23 @@ def main():
     ad1_url = generate_ad(retrieve_order_id(f"Create an ad for a TV show called {show1name} that is about {show1description}. The ad should be creative and engaging."))
     ad2_url = generate_ad(retrieve_order_id(f"Create an ad for a TV show called {show2name} that is about {show2description}. The ad should be creative and engaging."))
 
-    print("\nI have also created just for you two shows which I think you would love.")
+    print(f"\n{Fore.CYAN}I have also created just for you two shows which I think you would love.")
     print(f"Show #1 is based on the fact that you loved the input shows that you gave me. Its name is {show1name} and it is about {show1description}.")
     print(f"Show #2 is based on the shows that I recommended for you. Its name is {show2name} and it is about {show2description}.")
-    print("Here are also the 2 TV show ads. Hope you like them!")
+    print(f"{Fore.CYAN}Here are also the 2 TV show ads. Hope you like them!")
     print(f"Ad for {show1name}: {ad1_url}")
     print(f"Ad for {show2name}: {ad2_url}")
 
-    webbrowser.open(ad1_url)
-    webbrowser.open(ad2_url)
+    # Download and display the ads
+    ad1_filename = download_image(ad1_url, f"{show1name}_ad.jpg")
+    ad2_filename = download_image(ad2_url, f"{show2name}_ad.jpg")
+
+    if ad1_filename:
+        time.sleep(5)
+        display_image(ad1_filename)
+    if ad2_filename:
+        time.sleep(5)
+        display_image(ad2_filename)
 
 def compute_embeddings():
     openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -161,12 +186,12 @@ def load_embeddings():
         embeddings = pickle.load(f)
 
     # Check the number of entries in the dictionary
-    print(f"Total number of embeddings: {len(embeddings)}")
+    print(f"{Fore.GREEN}Total number of embeddings: {len(embeddings)}")
 
     # Print a sample entry
     sample_title = next(iter(embeddings))  # Get one show title
-    print(f"Sample show: {sample_title}")
-    print(f"Sample embedding vector (length {len(embeddings[sample_title])}): {embeddings[sample_title]}")
+    print(f"{Fore.CYAN}Sample show: {sample_title}")
+    print(f"{Fore.CYAN}Sample embedding vector (length {len(embeddings[sample_title])}): {embeddings[sample_title]}")
 
 def get_recommendations(user_shows):
     if not user_shows:
