@@ -159,20 +159,6 @@ def main():
         time.sleep(5)
         display_image(ad2_filename)
 
-def compute_embeddings():
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    shows = pd.read_csv("tv_shows.csv")
-    embeddings_dict = {}
-
-    for _, row in shows.iterrows():
-        response = client.embeddings.create(
-            input=row["Description"],
-            model="text-embedding-ada-002"
-        )
-        embeddings_dict[row["Title"]] = response.data[0].embedding
-
-    with open("embeddings.pkl", "wb") as f:
-        pickle.dump(embeddings_dict, f)
 
 def match_user_shows(user_input):
     shows = pd.read_csv("tv_shows.csv")["Title"].tolist()
@@ -185,13 +171,7 @@ def load_embeddings():
     with open("embeddings.pkl", "rb") as f:
         embeddings = pickle.load(f)
 
-    # Check the number of entries in the dictionary
-    print(f"{Fore.GREEN}Total number of embeddings: {len(embeddings)}")
-
-    # Print a sample entry
-    sample_title = next(iter(embeddings))  # Get one show title
-    print(f"{Fore.CYAN}Sample show: {sample_title}")
-    print(f"{Fore.CYAN}Sample embedding vector (length {len(embeddings[sample_title])}): {embeddings[sample_title]}")
+    return embeddings
 
 def get_recommendations(user_shows):
     if not user_shows:
@@ -225,6 +205,5 @@ def get_recommendations(user_shows):
     return recommendations_list[:5]
 
 if __name__ == "__main__":
-    #compute_embeddings()
-    #load_embeddings()
+    load_embeddings()
     main()
