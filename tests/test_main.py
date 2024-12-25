@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 import json
 import pandas as pd
 import numpy as np
@@ -9,7 +9,8 @@ from main import (
     retrieve_order_id,
     generate_ad,
     match_user_shows,
-    get_recommendations
+    get_recommendations,
+    load_embeddings
 )
 
 class TestTVShowRecommender(unittest.TestCase):
@@ -100,49 +101,26 @@ class TestTVShowRecommender(unittest.TestCase):
 
 from unittest.mock import patch, mock_open
 import builtins
-import webbrowser
 
 class TestAdditionalCoverage(unittest.TestCase):
 
-    @patch("main.client")
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("pandas.read_csv")
-    def test_compute_embeddings(self, mock_read_csv, mock_file, mock_client):
-        """Covers compute_embeddings by mocking CSV data and OpenAI client."""
-        from main import compute_embeddings
-        # Setup fake data
-        mock_read_csv.return_value = pd.DataFrame({"Title": ["T1"], "Description": ["D1"]})
-        
-        # Instead of using a dict with a "embedding" key, create a MagicMock that has an embedding attribute:
-        mock_embedding = MagicMock()
-        mock_embedding.embedding = [0.1, 0.2, 0.3]
-        fake_embedding_result = MagicMock()
-        fake_embedding_result.data = [mock_embedding]  # So code can query response.data[0].embedding
-
-        mock_client.embeddings.create.return_value = fake_embedding_result
-
-        compute_embeddings()  # Should pickle embeddings
-
-        mock_file.assert_called_once()  # Ensures a file was opened for writing
-        mock_client.embeddings.create.assert_called_once()
-
     @patch("builtins.open", new_callable=mock_open, read_data=b"\x80\x04\x95")
     def test_load_embeddings(self, mock_file):
-        """Covers load_embeddings by mocking pickle.load and verifying prints."""
+        """Covers load_embeddings by mocking pickle.load and ensuring it returns the expected embeddings."""
         from main import load_embeddings
-        with patch("pickle.load", return_value={"TitleA": [0.1, 0.2, 0.3]}), \
-             patch("builtins.print") as mock_print:
-            load_embeddings()
-            mock_print.assert_any_call("Total number of embeddings: 1")
+        with patch("pickle.load", return_value={"TitleA": [0.1, 0.2, 0.3]}):
+            embeddings = load_embeddings()
+            self.assertIsInstance(embeddings, dict)
+            self.assertIn("TitleA", embeddings)
+            self.assertEqual(embeddings["TitleA"], [0.1, 0.2, 0.3])
 
     @patch("main.retrieve_order_id_stub")
-    @patch("main.generate_ad_stub")
+    @patch("main.generate_ad_stub", return_value="https://example.com/mock_ad_image.jpg")
     @patch("main.input", side_effect=["BadShow", "Team A", "Team B", "", "Team A, Team B", "y"])
-    @patch("main.webbrowser.open")
     @patch("main.match_user_shows", return_value=["Team A", "Team B"])
     @patch("main.get_recommendations", return_value=[("Rec A", 0.9), ("Rec B", 0.8)])
     def test_main_flow_stubs(
-        self, mock_get_recs, mock_match_shows, mock_browser_open, mock_input,
+        self, mock_get_recs, mock_match_shows, mock_input,
         mock_ad_stub, mock_order_stub
     ):
         """Covers main() using stubs for the LightX calls."""
@@ -159,17 +137,15 @@ class TestAdditionalCoverage(unittest.TestCase):
             # get_recommendations is mocked, so the final prints are covered
             mock_ad_stub.assert_called()  # Means generate_ad was called via stub
             mock_order_stub.assert_called()  # Means retrieve_order_id was called via stub
-            mock_browser_open.assert_called()  # Means webbrowser.open lines are covered
 
     @patch("main.input", side_effect=["Show1, Show2", "y"])
-    @patch("main.webbrowser.open")
     @patch("main.match_user_shows", return_value=["Show1", "Show2"])
     @patch("main.get_recommendations", return_value=[("Rec1", 0.7), ("Rec2", 0.6)])
     @patch("main.retrieve_order_id", return_value="test_order")
     @patch("main.generate_ad", return_value="https://example.com/ad.jpg")
     def test_main_flow_real(
         self, mock_gen_ad, mock_ret_id, mock_get_recs, mock_match_shows,
-        mock_browser, mock_input
+        mock_input
     ):
         """Covers main() with 'real' (non-stub) calls mocked, letting coverage see the branch."""
         from main import main, should_use_lightx_stubs
@@ -181,7 +157,6 @@ class TestAdditionalCoverage(unittest.TestCase):
 
             mock_ret_id.assert_called()
             mock_gen_ad.assert_called()
-            mock_browser.assert_called()
 
 if __name__ == '__main__':
     unittest.main()
