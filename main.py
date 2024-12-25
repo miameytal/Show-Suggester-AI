@@ -27,66 +27,54 @@ def generate_show_details(prompt_text):
     )
     raw_content = response.choices[0].message.content.strip()
     # Strip possible triple backticks or language fences
-    if raw_content.startswith("```"):
+    if (raw_content.startswith("```")):
         raw_content = raw_content.strip("```").strip()
         # In case it starts with "json", remove that label too.
-        if raw_content.startswith("json"):
+        if (raw_content.startswith("json")):
             raw_content = raw_content[4:].strip()
     print(f"Response content after cleaning:\n{raw_content}")  # Debugging line
     data = json.loads(raw_content)
     return data['name'], data['description']
 
+def should_use_lightx_stubs():
+    return os.getenv("USE_LIGHTX_STUBS", "False").lower() in ("true", "1", "t")
+
 def retrieve_order_id(prompt):
-    
+    if should_use_lightx_stubs():
+        return retrieve_order_id_stub(prompt)
+    # Real implementation:
     url = 'https://api.lightxeditor.com/external/api/v1/text2image'
     headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': os.getenv("LIGHTX_API_KEY")  # Replace with your actual API key
+        'Content-Type': 'application/json',
+        'x-api-key': os.getenv("LIGHTX_API_KEY")
     }
-
-    data = {
-    "textPrompt": prompt  # Replace with your specific input prompt
-    }
-
+    data = {"textPrompt": prompt}
     response = requests.post(url, headers=headers, json=data)
-
-    # Check if the request was successful
     if response.status_code == 200:
-        print("Request was successful!")
-        print(response.json())
         return response.json()["body"]["orderId"] 
     else:
-        print(f"Request failed with status code: {response.status_code}")
-        print(response.text)
         return None
 
 def generate_ad(order_id, max_retries=10, delay_in_seconds=5):
-    """Poll the LightX API until the ad is ready or until max retries."""
+    if should_use_lightx_stubs():
+        return generate_ad_stub(order_id, max_retries, delay_in_seconds)
+    # Real implementation:
     url = 'https://api.lightxeditor.com/external/api/v1/order-status'
     api_key = os.getenv("LIGHTX_API_KEY")
     headers = {
         'Content-Type': 'application/json',
         'x-api-key': api_key
     }
-
     for _ in range(max_retries):
         response = requests.post(url, headers=headers, json={"orderId": order_id})
         if response.status_code == 200:
             data = response.json()
             output = data["body"]["output"]
-            status = data["body"]["status"]
-            
             if output:
-                print("Ad generation complete:", output)
                 return output
-            else:
-                print(f"Ad still in status '{status}'. Retrying in {delay_in_seconds} seconds...")
-                time.sleep(delay_in_seconds)
+            time.sleep(delay_in_seconds)
         else:
-            print(f"Failed with status code: {response.status_code} - {response.text}")
             return None
-
-    print("Ad was not generated in time. Returning None.")
     return None
 
 def retrieve_order_id_stub(prompt):
@@ -96,13 +84,6 @@ def retrieve_order_id_stub(prompt):
 def generate_ad_stub(order_id, max_retries=10, delay_in_seconds=5):
     print(f"Stub: generate_ad called with order_id: {order_id}")
     return "https://example.com/mock_ad_image.jpg"
-
-# Use the stubs during development
-use_lightx_stubs = os.getenv("USE_LIGHTX_STUBS", "False").lower() in ("true", "1", "t")
-
-if use_lightx_stubs:
-    retrieve_order_id = retrieve_order_id_stub
-    generate_ad = generate_ad_stub
 
 def main():
     while True:
@@ -188,33 +169,31 @@ def load_embeddings():
     print(f"Sample embedding vector (length {len(embeddings[sample_title])}): {embeddings[sample_title]}")
 
 def get_recommendations(user_shows):
+    if not user_shows:
+        raise Exception("No shows provided")
     with open("embeddings.pkl", "rb") as f:
         embeddings = pickle.load(f)
 
-    user_vectors = [embeddings[show] for show in user_shows]
+    user_vectors = [embeddings[s] for s in user_shows]
     average_vector = np.mean(user_vectors, axis=0)
 
     index_dim = len(average_vector)
     usearch_index = Index(ndim=index_dim)
 
-    # Build dictionaries to map between titles and integer IDs
     title_to_id = {}
     id_to_title = {}
-
-    # Assign integer IDs to each title
     for idx, (title, vector) in enumerate(embeddings.items()):
         title_to_id[title] = idx
         id_to_title[idx] = title
         usearch_index.add(idx, np.array(vector, dtype=np.float32))
 
-    # Search for the top 10 nearest neighbors
     results = usearch_index.search(np.array(average_vector, dtype=np.float32), 10)
-
     recommendations_list = []
     for match in results:
         show_title = id_to_title[match.key]
         if show_title not in user_shows:
-            similarity = 1.0 / (1.0 + match.distance)
+            # Cast to float to avoid np.float32 confusion in tests
+            similarity = float(1.0 / (1.0 + match.distance))
             recommendations_list.append((show_title, similarity))
 
     recommendations_list.sort(key=lambda x: x[1], reverse=True)
