@@ -10,6 +10,7 @@ import json
 import requests
 import webbrowser
 import time
+from usearch.index import Index
 
 
 client = OpenAI()
@@ -87,6 +88,21 @@ def generate_ad(order_id, max_retries=10, delay_in_seconds=5):
 
     print("Ad was not generated in time. Returning None.")
     return None
+
+def retrieve_order_id_stub(prompt):
+    print(f"Stub: retrieve_order_id called with prompt: {prompt}")
+    return "mock_order_id"
+
+def generate_ad_stub(order_id, max_retries=10, delay_in_seconds=5):
+    print(f"Stub: generate_ad called with order_id: {order_id}")
+    return "https://example.com/mock_ad_image.jpg"
+
+# Use the stubs during development
+use_lightx_stubs = os.getenv("USE_LIGHTX_STUBS", "False").lower() in ("true", "1", "t")
+
+if use_lightx_stubs:
+    retrieve_order_id = retrieve_order_id_stub
+    generate_ad = generate_ad_stub
 
 def main():
     while True:
@@ -178,14 +194,31 @@ def get_recommendations(user_shows):
     user_vectors = [embeddings[show] for show in user_shows]
     average_vector = np.mean(user_vectors, axis=0)
 
-    recommendations = []
-    for title, vector in embeddings.items():
-        if title not in user_shows:
-            similarity = cosine_similarity([average_vector], [vector])[0][0]
-            recommendations.append((title, similarity))
+    index_dim = len(average_vector)
+    usearch_index = Index(ndim=index_dim)
 
-    recommendations.sort(key=lambda x: x[1], reverse=True)
-    return recommendations[:5]
+    # Build dictionaries to map between titles and integer IDs
+    title_to_id = {}
+    id_to_title = {}
+
+    # Assign integer IDs to each title
+    for idx, (title, vector) in enumerate(embeddings.items()):
+        title_to_id[title] = idx
+        id_to_title[idx] = title
+        usearch_index.add(idx, np.array(vector, dtype=np.float32))
+
+    # Search for the top 10 nearest neighbors
+    results = usearch_index.search(np.array(average_vector, dtype=np.float32), 10)
+
+    recommendations_list = []
+    for match in results:
+        show_title = id_to_title[match.key]
+        if show_title not in user_shows:
+            similarity = 1.0 / (1.0 + match.distance)
+            recommendations_list.append((show_title, similarity))
+
+    recommendations_list.sort(key=lambda x: x[1], reverse=True)
+    return recommendations_list[:5]
 
 if __name__ == "__main__":
     #compute_embeddings()
